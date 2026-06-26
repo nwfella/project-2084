@@ -560,7 +560,7 @@ function createPool(maxCount, factory) {
 function makePlayer() {
   return {
     x: 0, y: 0, w: 12, h: 16, alive: false,
-    flashTimer: 0, shootCooldown: 0
+    flashTimer: 0, shootCooldown: 0, invulnTimer: 0
   };
 }
 
@@ -761,6 +761,7 @@ class Game {
     this.playerPool.reset();
     this.player = this.playerPool.spawn(CONFIG.W / 2 - 6, CONFIG.H / 2 - 8, (e) => {
       e.shootCooldown = 0;
+      e.invulnTimer = 1.5; // 1.5 seconds of respawn invulnerability
     });
   }
 
@@ -849,6 +850,7 @@ class Game {
     const dir = this.input.getFire();
     if (!dir || !this.player || !this.player.alive) return;
     if (this.player.shootCooldown > 0) return;
+    if (this.player.invulnTimer > 0) return; // No shooting while invulnerable
     this.player.shootCooldown = 0.12;
     const cx = this.player.x + this.player.w / 2;
     const cy = this.player.y + this.player.h / 2;
@@ -1013,6 +1015,23 @@ class Game {
   }
 
   // ---- COLLISION HANDLING ----
+  _rescueHumans() {
+    if (!this.player || !this.player.alive) return;
+    const pbox = { x: this.player.x, y: this.player.y, w: this.player.w, h: this.player.h };
+    for (let hu of this.humans.pool) {
+      if (!hu.alive) continue;
+      if (aabb(pbox, { x: hu.x, y: hu.y, w: hu.w, h: hu.h })) {
+        hu.alive = false;
+        this.rescueStreak++;
+        const bonus = Math.min(this.rescueStreak, 5);
+        const pts = bonus * 1000;
+        this.addScore(pts);
+        this.audio.humanRescue();
+        this.emitExplosion(hu.x + hu.w / 2, hu.y + hu.h / 2, NEON.GREEN, 10);
+      }
+    }
+  }
+
   killEnemy(entity, pool, pts) {
     entity.alive = false;
     this.emitExplosion(entity.x + entity.w / 2, entity.y + entity.h / 2, NEON.YELLOW, 5);
@@ -1076,6 +1095,11 @@ class Game {
 
     // ---- Timers ----
     if (this.waveIntroTimer > 0) this.waveIntroTimer -= dt;
+    if (this.player.invulnTimer > 0) {
+      this.player.invulnTimer -= dt;
+      // Flash during invulnerability
+      this.player.flashTimer = Math.random() < 0.5 ? 0 : 3;
+    }
 
     // ---- Update projectiles ----
     this._updateProjectiles(dt);
@@ -1412,6 +1436,12 @@ class Game {
 
   _checkCollisions() {
     if (!this.player || !this.player.alive) return;
+    // Invulnerability — skip damage but allow rescues
+    if (this.player.invulnTimer > 0) {
+      // Still let humans be rescued during invuln
+      this._rescueHumans();
+      return;
+    }
     const px = this.player, pp = { x: px.x, y: px.y, w: px.w, h: px.h };
 
     // ---- Player projectiles vs enemies ----
@@ -1601,18 +1631,7 @@ class Game {
     }
 
     // ---- Player vs Humans (rescue) ----
-    for (let hu of this.humans.pool) {
-      if (!hu.alive) continue;
-      if (aabb(pbox, { x: hu.x, y: hu.y, w: hu.w, h: hu.h })) {
-        hu.alive = false;
-        this.rescueStreak++;
-        const bonus = Math.min(this.rescueStreak, 5);
-        const pts = bonus * 1000;
-        this.addScore(pts);
-        this.audio.humanRescue();
-        this.emitExplosion(hu.x + hu.w / 2, hu.y + hu.h / 2, NEON.GREEN, 10);
-      }
-    }
+    this._rescueHumans();
 
     // ---- Hulks vs Humans ----
     for (let hk of this.hulks.pool) {
@@ -1705,6 +1724,10 @@ class Renderer {
   _drawPlayer() {
     if (!this.g.player || !this.g.player.alive) return;
     const p = this.g.player;
+    // Flash during invulnerability
+    if (p.invulnTimer > 0 && Math.floor(p.invulnTimer * 10) % 2 === 0) {
+      return; // Skip draw for flashing effect
+    }
     this._drawEntity(p, NEON.CYAN);
     // Direction indicator
     const dir = this.g.input.getMove() || this.g.input.getFire();
