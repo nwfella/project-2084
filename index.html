@@ -1081,7 +1081,7 @@ class Game {
   }
 
   checkWaveComplete() {
-    const enemyCount = this.grunts.count() + this.hulks.count() + this.brains.count() +
+    const enemyCount = this.grunts.count() + this.brains.count() +
       this.progs.count() + this.spheroids.count() + this.enforcers.count() +
       this.quarks.count() + this.tanks.count();
     if (enemyCount === 0) {
@@ -1326,6 +1326,15 @@ class Game {
       if (nearest) {
         const dx = nearest.x + nearest.w / 2 - (h.x + h.w / 2);
         const dy = nearest.y + nearest.h / 2 - (h.y + h.h / 2);
+        const d = Math.hypot(dx, dy);
+        if (d > 0) {
+          h.vx = (dx / d) * CONFIG.HULK_SPEED;
+          h.vy = (dy / d) * CONFIG.HULK_SPEED;
+        }
+      } else if (this.player && this.player.alive) {
+        // No humans left — chase the player
+        const dx = this.player.x + this.player.w / 2 - (h.x + h.w / 2);
+        const dy = this.player.y + this.player.h / 2 - (h.y + h.h / 2);
         const d = Math.hypot(dx, dy);
         if (d > 0) {
           h.vx = (dx / d) * CONFIG.HULK_SPEED;
